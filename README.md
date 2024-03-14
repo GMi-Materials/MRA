@@ -15,7 +15,7 @@ The promising implementation of the method is shown in the paper from Millner et
 -  scipy
 
 ## Example Usage
-
+Note that X and y are supposed to be normalized using z-score normalization in this examples! If you choose another standardization technique (or non at all), please adapt the code accordingly.
 ### Linear Regression 
 ```python
 from sklearn.linear_model import LinearRegression
