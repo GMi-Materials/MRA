@@ -6,6 +6,8 @@ In this feature selection method, features are gradually added until there is mi
 It is recommended to choose a linear correlation coefficient when using a linear model (e.g. linear regression) and a non-linear one, when using more sophisticated models that can capture non-linear relationships.
 
 The promising implementation of the method is shown in the paper from Millner et al.: 
+G. Millner, M. Mücke, L. Romaner, D. Scheiber, Tensile strength prediction of steel sheets: An insight into data-driven models, dimensionality reduction, and feature importance, Modelling and Simulation in Materials Science and Engineering (2024).
+URL http://iopscience.iop.org/article/10.1088/1361-651X/ad6fc0
 
 ## Dependencies
 -  python 3
