@@ -1,18 +1,14 @@
 # -*- coding: utf-8 -*-
-
 author = "Gerfried Millner (GMi)"
-version = "1.0.0"   
-date = "06.03.2024"
-email = "gerfried.millner@mcl.at "
+version = "1.1.0"   
+date = "04.12.2025"
+email = "gerfried.millner@gmail.com"
 status = "Deliver"
 
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score
-from sklearn import preprocessing
 from scipy import stats
-import numbers
 import time
 
 
@@ -30,19 +26,16 @@ def X_scaling(X_in):
 
     """
     
-    X_scal = pd.DataFrame()
-
-    for i, col in enumerate(X_in.columns):
-        
-        if len(X_in[col].unique()) <= 2:
-            X_scal = pd.concat([X_scal,X_in[col]],axis=1)
-        else:
-            X_scal = pd.concat([X_scal,stats.zscore(X_in[col])],axis=1)
+    X_scal = X_in.copy()
+    
+    for col in X_in.columns:
+        if len(X_in[col].unique()) > 2:
+            X_scal[col] = stats.zscore(X_in[col])
     
     return X_scal
 
 
-def corr_col(X, res, method='pearson', list_used=[]):
+def corr_col(X, res, method='pearson', list_used=None):
     """determine feature with highest correlation with residuals.
 
     Parameters
@@ -54,7 +47,7 @@ def corr_col(X, res, method='pearson', list_used=[]):
     method : str, optional
         Used correlation method. The default is 'pearson'. Other options include 'spearman' and 'kendall'.
     list_used : list, optional
-        List of already identified features. The default is [].
+        List of already identified features. The default is None.
 
     Returns
     -------
@@ -62,6 +55,8 @@ def corr_col(X, res, method='pearson', list_used=[]):
         Feature name that has the highest correlation with the residual and is not in list_used.
 
     """
+    if list_used is None:
+        list_used = []
 
     X_new = X.copy()
     X_new['Residuen'] = res
@@ -70,15 +65,15 @@ def corr_col(X, res, method='pearson', list_used=[]):
 
     corr_ma = np.abs(X_new.corr(method=method))
     if len(corr_ma)>1:
-        id_max = np.argsort(corr_ma['Residuen'])[-2]
+        id_max = np.argsort(corr_ma['Residuen'].to_numpy())[-2]
     else:
         id_max = 0
     col_corr = corr_ma.columns[id_max]
 
     return col_corr
 
-def MRA(X, y, model_fct, corr_method='pearson', tol=0.01, min_feat=2):
-    """Implement feature selection method based on correlation with reiduals.
+def MRA(X, y, model_fct, corr_method='pearson', tol=0.01, min_feat=2, start_features=None):
+    """Implement feature selection method based on correlation with residuals.
 
     Parameters
     ----------
@@ -92,9 +87,12 @@ def MRA(X, y, model_fct, corr_method='pearson', tol=0.01, min_feat=2):
     corr_method : str, optional
         Used correlation method. The default is 'pearson'. Other options include 'spearman' and 'kendall'.
     tol : float, optional
-        Tolearnce for determining if a model is not improving. The default is 0.01.
+        Tolerance for determining if a model is not improving. The default is 0.01.
     min_feat : int, optional
         Minimal number of selected features. The default is 2.
+        Making the minimal number of features: min_feat + len(start_features)
+    start_features : list, optional
+        List of feature names to start with. If None, determines first feature via correlation. The default is None.
 
     Returns
     -------
@@ -107,24 +105,29 @@ def MRA(X, y, model_fct, corr_method='pearson', tol=0.01, min_feat=2):
 
     """
       
-    # determine first feature via correlation
-    Xy = X.copy()
-    Xy['y'] = np.ravel(y)
-    corr_XY = Xy.corr(method=corr_method)
-    col_corr0 = np.abs(corr_XY['y']).sort_values(ascending=False).index[1]
-
+    # determine initial features
+    if start_features is None:
+        # determine first feature via correlation
+        Xy = X.copy()
+        Xy['y'] = np.ravel(y)
+        corr_XY = Xy.corr(method=corr_method)
+        col_corr0 = np.abs(corr_XY['y']).sort_values(ascending=False).index[1]
+        list_feat_used = [col_corr0]
+    else:
+        # use provided features
+        list_feat_used = list(start_features)
+    
     X_init = pd.DataFrame()
-    X_init[col_corr0] = X[col_corr0]
+    for feat in list_feat_used:
+        X_init[feat] = X[feat]
 
-    m_init, r2_init, res_init  = model_fct(X_scaling(X_init), stats.zscore(y))
+    m_init, r2_init, res_init  = model_fct(X_init, y)
         
     ### loop ###
 
-    r2_hist = r2_init.copy()
+    r2_hist = r2_init
     X_n = X_init.copy()
     res_n = res_init.copy()
-
-    list_feat_used = [col_corr0]
     
     list_r2 = [r2_init]
 
@@ -137,13 +140,16 @@ def MRA(X, y, model_fct, corr_method='pearson', tol=0.01, min_feat=2):
         start = time.time()
         
         col_co = corr_col(X, res_n, method=corr_method, list_used=list_feat_used)
+        if len(list_feat_used) >= X.shape[1]:
+            print("No more unused features left; stopping.")
+            break
         print('col_co = '+col_co)
 
         list_feat_used.append(col_co)    
 
         X_n[col_co] = X[col_co]
         
-        m_n, r2_new, res_n = model_fct(X_scaling(X_n), stats.zscore(y))
+        m_n, r2_new, res_n = model_fct(X_n, y)
 
         print('r2_new = '+format(r2_new, '.5'))
         print('delta_R2 = '+str(r2_new - r2_hist))
@@ -159,7 +165,7 @@ def MRA(X, y, model_fct, corr_method='pearson', tol=0.01, min_feat=2):
             diff_hist = False
             print('diff_hist = False, diff_R2 = '+str(r2_new - r2_hist))
         
-        r2_hist = r2_new.copy()
+        r2_hist = r2_new
 
     return X_n, list_feat_used, list_r2
 
@@ -181,13 +187,19 @@ if __name__ == '__main__':
     from sklearn.linear_model import LinearRegression
     
     def LR_model(X,y):
+        
+        X_scaled = X_scaling(X)
+        y_scaled = stats.zscore(y)
+        
+        y_mean = np.mean(np.ravel(y))
+        y_std = np.std(np.ravel(y))
 
         model_untrained = LinearRegression() 
-        model = model_untrained.fit(X, np.ravel(y))
+        model = model_untrained.fit(X_scaled, np.ravel(y_scaled))
         
-        predict = [float((x*np.std(y) + np.mean(y)).iloc[0]) for x in model.predict(X)]
+        predict = model.predict(X_scaled) * y_std + y_mean
             
-        r2 = model.score(X, y)
+        r2 = model.score(X_scaled, y_scaled)
         res = np.ravel(y) - predict
 
         return model, r2, res
@@ -201,13 +213,19 @@ if __name__ == '__main__':
     from sklearn.linear_model import Ridge
     
     def Ridge_model(X,y, alpha):
+        
+        X_scaled = X_scaling(X)
+        y_scaled = stats.zscore(y)
+        
+        y_mean = np.mean(np.ravel(y))
+        y_std = np.std(np.ravel(y))
     
         model_untrained = Ridge(alpha=alpha)
-        model = model_untrained.fit(X, np.ravel(y))
+        model = model_untrained.fit(X_scaled, np.ravel(y_scaled))
     
-        predict = [float((x*np.std(y) + np.mean(y)).iloc[0]) for x in model.predict(X)]
+        predict = model.predict(X_scaled) * y_std + y_mean
      
-        r2 = model.score(X, y)
+        r2 = model.score(X_scaled, y_scaled)
         res = np.ravel(y) - predict
     
         return model, r2, res
@@ -222,17 +240,23 @@ if __name__ == '__main__':
     import xgboost as xgb
 
     def xgb_model(X, y, par):
+        
+        X_scaled = X_scaling(X)
+        y_scaled = stats.zscore(y)
+        
+        y_mean = np.mean(np.ravel(y))
+        y_std = np.std(np.ravel(y))
 
-        dtrain = xgb.DMatrix(X, y)
+        dtrain = xgb.DMatrix(X_scaled, y_scaled)
 
         evallist = [(dtrain, 'eval'), (dtrain, 'train')]
         num_round = 100
         
         model = xgb.train(par, dtrain, num_round, evals=evallist, early_stopping_rounds=10, verbose_eval=False)
         
-        predict = [float((x*np.std(y) + np.mean(y)).iloc[0]) for x in model.predict(dtrain)]
+        predict = model.predict(dtrain) * y_std + y_mean
 
-        r2 = r2_score(np.ravel(y), predict)
+        r2 = r2_score(np.ravel(y_scaled), model.predict(dtrain))
         res = np.ravel(y) - predict
 
         return model, r2, res
