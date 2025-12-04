@@ -18,19 +18,25 @@ URL: http://iopscience.iop.org/article/10.1088/1361-651X/ad6fc0
 -  scipy
 
 ## Example Usage
-Note that X and y are supposed to be normalized using z-score normalization in this examples! If you choose another standardization technique (or non at all), please adapt the code accordingly.
+
 ### Linear Regression 
 ```python
 from sklearn.linear_model import LinearRegression
 
 def LR_model(X,y):
+    
+    X_scaled = X_scaling(X)
+    y_scaled = stats.zscore(y)
+    
+    y_mean = np.mean(np.ravel(y))
+    y_std = np.std(np.ravel(y))
 
     model_untrained = LinearRegression() 
-    model = model_untrained.fit(X, np.ravel(y))
+    model = model_untrained.fit(X_scaled, np.ravel(y_scaled))
     
-    predict = [float((x*np.std(y) + np.mean(y)).iloc[0]) for x in model.predict(X)]
+    predict = model.predict(X_scaled) * y_std + y_mean
         
-    r2 = model.score(X, y)
+    r2 = model.score(X_scaled, y_scaled)
     res = np.ravel(y) - predict
 
     return model, r2, res
@@ -43,13 +49,19 @@ X_MRA_lr, list_feat_mra_r, list_r2_mra_lr = MRA(X, Y, LR_model, corr_method='pea
 from sklearn.linear_model import Ridge
 
 def Ridge_model(X,y, alpha):
+    
+    X_scaled = X_scaling(X)
+    y_scaled = stats.zscore(y)
+    
+    y_mean = np.mean(np.ravel(y))
+    y_std = np.std(np.ravel(y))
 
     model_untrained = Ridge(alpha=alpha)
-    model = model_untrained.fit(X, np.ravel(y))
+    model = model_untrained.fit(X_scaled, np.ravel(y_scaled))
 
-    predict = [float((x*np.std(y) + np.mean(y)).iloc[0]) for x in model.predict(X)]
+    predict = model.predict(X_scaled) * y_std + y_mean
  
-    r2 = model.score(X, y)
+    r2 = model.score(X_scaled, y_scaled)
     res = np.ravel(y) - predict
 
     return model, r2, res
@@ -64,17 +76,23 @@ X_MRA_ridge, list_feat_mra_ridge, list_r2_mra_ridge = MRA(X, Y, Ridge_model_fct,
 import xgboost as xgb
 
 def xgb_model(X, y, par):
+    
+    X_scaled = X_scaling(X)
+    y_scaled = stats.zscore(y)
+    
+    y_mean = np.mean(np.ravel(y))
+    y_std = np.std(np.ravel(y))
 
-    dtrain = xgb.DMatrix(X, y)
+    dtrain = xgb.DMatrix(X_scaled, y_scaled)
 
     evallist = [(dtrain, 'eval'), (dtrain, 'train')]
     num_round = 100
     
     model = xgb.train(par, dtrain, num_round, evals=evallist, early_stopping_rounds=10, verbose_eval=False)
     
-    predict = [float((x*np.std(y) + np.mean(y)).iloc[0]) for x in model.predict(dtrain)]
+    predict = model.predict(dtrain) * y_std + y_mean
 
-    r2 = r2_score(np.ravel(y), predict)
+    r2 = r2_score(np.ravel(y_scaled), model.predict(dtrain))
     res = np.ravel(y) - predict
 
     return model, r2, res
