@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
+
 author = "Gerfried Millner (GMi)"
-version = "1.1.0"   
-date = "04.12.2025"
+version = "1.2.0"   
+date = "21.01.2026"
 email = "gerfried.millner@gmail.com"
 status = "Deliver"
 
@@ -34,7 +35,6 @@ def X_scaling(X_in):
     
     return X_scal
 
-
 def corr_col(X, res, method='pearson', list_used=None):
     """determine feature with highest correlation with residuals.
 
@@ -51,8 +51,9 @@ def corr_col(X, res, method='pearson', list_used=None):
 
     Returns
     -------
-    col_corr : str
+    col_corr : str or None
         Feature name that has the highest correlation with the residual and is not in list_used.
+        Returns None if no valid features remain.
 
     """
     if list_used is None:
@@ -60,16 +61,37 @@ def corr_col(X, res, method='pearson', list_used=None):
 
     X_new = X.copy()
     X_new['Residuen'] = res
+    
+    # Drop already used features
     for feat in list_used:
-        X_new = X_new.drop(feat, axis=1)
+        if feat in X_new.columns:
+            X_new = X_new.drop(feat, axis=1)
 
     corr_ma = np.abs(X_new.corr(method=method))
-    if len(corr_ma)>1:
-        id_max = np.argsort(corr_ma['Residuen'].to_numpy())[-2]
-    else:
-        id_max = 0
-    col_corr = corr_ma.columns[id_max]
-
+    
+    # Check if there are any features left besides 'Residuen'
+    if len(corr_ma) <= 1:
+        return None
+    
+    # Get correlation with residuals, excluding 'Residuen' itself
+    residual_corr = corr_ma['Residuen'].drop('Residuen')
+    
+    if len(residual_corr) == 0:
+        return None
+    
+    # Remove NaN values
+    residual_corr = residual_corr.dropna()
+    
+    if len(residual_corr) == 0:
+        return None
+    
+    # Find feature with highest correlation
+    col_corr = residual_corr.idxmax()
+    
+    # Check if result is NaN (shouldn't happen after dropna, but be safe)
+    if pd.isna(col_corr):
+        return None
+    
     return col_corr
 
 def MRA(X, y, model_fct, corr_method='pearson', tol=0.01, min_feat=2, start_features=None):
@@ -134,41 +156,41 @@ def MRA(X, y, model_fct, corr_method='pearson', tol=0.01, min_feat=2, start_feat
     diff_hist = True
 
     for i in range(len(X.columns)):
-
         print('#'*15+' i='+str(i))
         print(list_feat_used)
         start = time.time()
         
         col_co = corr_col(X, res_n, method=corr_method, list_used=list_feat_used)
-        if len(list_feat_used) >= X.shape[1]:
+        
+        # Check if no more features available
+        if col_co is None or len(list_feat_used) >= X.shape[1]:
             print("No more unused features left; stopping.")
             break
+            
         print('col_co = '+col_co)
 
         list_feat_used.append(col_co)    
-
         X_n[col_co] = X[col_co]
         
         m_n, r2_new, res_n = model_fct(X_n, y)
 
         print('r2_new = '+format(r2_new, '.5'))
-        print('delta_R2 = '+str(r2_new - r2_hist))
+        print('delta_R2 = '+format(r2_new - r2_hist, '.5'))
         print('Time(s) = '+format(time.time()-start,'.2')+' s')
         
         list_r2.append(r2_new)
         
         if r2_new - r2_hist < tol and i>=min_feat and diff_hist==False:
-            print('BREAK @i='+str(i)+', delta_R2 = '+str(r2_new - r2_hist))
+            print('BREAK @i='+str(i)+', delta_R2 = '+format(r2_new - r2_hist, '.5'))
             break
         diff_hist = True
         if r2_new - r2_hist < tol:
             diff_hist = False
-            print('diff_hist = False, diff_R2 = '+str(r2_new - r2_hist))
+            print('diff_hist = False, diff_R2 = '+format(r2_new - r2_hist, '.5'))
         
         r2_hist = r2_new
 
     return X_n, list_feat_used, list_r2
-
 
 if __name__ == '__main__':
     #### Change X and Y according to your use-case
